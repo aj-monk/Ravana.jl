@@ -1,0 +1,9 @@
+name = "Ravana"
+uuid = "1aec9750-a47d-11e8-1214-a71a2af3bab8"
+authors = ["Ajay Mendez <ajay.mendez@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+RocksDB = "1341945c-a14d-11e8-24c3-dbaabfaf94ca"
+Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
