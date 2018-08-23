@@ -1,6 +1,9 @@
 using Serialization
 
-sleep_random() = sleep(random(Int)%13 * CANDIDATE_SLEEP_GRANULARITY)
+function sleep_random()
+    t = ELECTION_TIMEOUT + rand(Int)%23 * CANDIDATE_SLEEP_GRANULARITY
+    sleep(t)
+end
 
 is_majority(votes) = return (votes < (length(nodes) + 1)/2 ? false : true)
 
@@ -15,7 +18,6 @@ function byte_array(x)
     serialize(iob, x)
     iob.data
 end
-
 
 struct KVSSerializeException <: Exception
     msg::String

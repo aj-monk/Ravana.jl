@@ -8,7 +8,7 @@ function process_preamble(h::UInt64)
     size    = UInt32(h & 0xffffffff)
     version = UInt16((h >> 32) & 0xffff)
     flags   = UInt16((h >> 48) & 0xffff)
-    println("size=$size version=$version flags=$flags", " ", hex(h))
+    println("size=$size version=$version flags=$flags", " ", h)
     (size, version, flags)
 end
 
@@ -31,12 +31,14 @@ function ravana_server(;address=IPv4(0), port=2000)
     @async begin
         server = 0 # Init server socket
         sockErr = true
+        println("In ravana_server")
         while (sockErr)
             try
                 server = listen(address, port)
                 sockErr = false
                 println("Starting cluster communication server at $(address):$(port)")
             catch e
+                println("Could not listen on port $(port). Trying $(port + 1)")
                 port += 1  # Try next port
             end
         end
@@ -67,7 +69,7 @@ end
 """
     ravana_client(address, port, op::Int32, argv...)
 Low level function that can be called from a Julia prompt/program.
-```jldoctest
+```jldoxctest
 julia> Ravana.ravana_client(IPv4(0), 2000, Ravana.OP_GET_NODE_PARAMS)
 
 ```
@@ -79,7 +81,7 @@ function ravana_client(address, port, op::Int32, argv...)
     flags = UInt16(RAFT_JULIA_CLIENT)
     client = connect(address, port)
 
-    write(client, size, version, flags, bytes)
+    ret = write(client, size, version, flags, bytes)
     ret_size = read(client, Int)
     ret = array_to_type(read(client, ret_size))
     close(client)
@@ -88,11 +90,14 @@ end
 
 # If leader execute op, otherise redirect to leader
 function raft_cluster_execute(op, func, argv)
-    if op == OP_INIT_CLUSTER || current_state == LEADER
-        raft_execute(op, func, argv)
+    if op == OP_INIT_CLUSTER
+        ret = raft_execute(op, func, argv) # Bootstrap bypasses append entries
+    elseif  current_state == LEADER
+        ret = raft_run_command(op, func, argv) # Commits as per RAFT protocol
     else
-        ravana_client(leaderAddress, leaderPort, op, argv) # Redirect to leader
+        ret = ravana_client(leaderAddress, leaderPort, op, argv) # Redirect to leader
     end
+    ret
 end
 
 function init_cluster(;address=IPv4(0), port=2000)
