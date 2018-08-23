@@ -44,10 +44,9 @@ mutable struct followerState
     flag::Int      # To communicate with task
 end
 
-followers = Dict{UInt128, followerState}()
-
-repCond = Condition()   # Condition to wake up replicator tasks
-
+followers = Dict{UInt128, followerState}() # List of followers
+clients = Dict{Int, Condition}()  # List of clients waiting on log replication
+repCond = Condition()        # Condition to wake up replicator tasks
 tasks = Dict{String, Task}() # Dict of first level tasks
 
 const CANDIDATE_SLEEP_GRANULARITY = 0.001
@@ -307,14 +306,31 @@ time commitIndex will be incremented - see the safety argument in
 the paper.
 """
 function raft_run_command(op, func, args)
+    (get_raft_state() != LEADER) && (return nothing)
     r = get_log_entry(rInfo.lastIndex)
     @assert(r != nothing)
     (prevTerm, op, argv) = r
     # Append local log
     payload = (rInfo.currentTerm, nodeId, rInfo.lastIndex, prevTerm, rInfo.commitIndex, op, argv)
     local_append_entries(payload)
-    # Append to other logs
-    
+    # Wake up tasks to append to other nodes' logs
+    notify(repCond, all=true)
+    wait_on_majority(rInfo.lastIndex + 1)
+    ret = raft_execute(op, func, args)
+    ret
+end
+
+"""
+    wait_on_majority(index)
+
+Waits for the log entry at index on this node to be replicated to a majority
+of nodes in the cluster.
+"""
+function wait_on_majority(index)
+    @assert(haskey(clients, index) == false)
+    clients[index] = cond = Condition()
+    wait(cond)
+    delete!(clients, index)
 end
 
 """
