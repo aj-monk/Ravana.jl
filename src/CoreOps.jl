@@ -44,13 +44,24 @@ end
 
 raft_noop() = return
 
+function raft_cluster_add_node(thisNode, clusterNode)
+    
+end
+
+function raft_cluster_get_config()
+    return nodes
+end
+
 # Ravana ops
 const OP_INIT_CLUSTER            = Int32(1)
 const OP_NOOP                    = Int32(2)
-const OP_NONE                    = Int32(101)
+const OP_GET_CLUSTER_CONF        = Int32(3)
+const OP_ADD_NODE                = Int32(4)
 
 const OP_UNKNOWN                 = Int32(10000)
 
 # Lookup table for Core Ravana Ops
 const op_table = Dict(OP_INIT_CLUSTER      =>  raft_init_cluster,
-                      OP_NOOP              =>  raft_noop)
+                      OP_NOOP              =>  raft_noop,
+                      OP_GET_CLUSTER_CONF  =>  raft_cluster_get_config,
+                      OP_ADD_NODE          =>  raft_cluster_add_node)

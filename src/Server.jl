@@ -2,7 +2,9 @@
 using Sockets
 
 const RAFT_API_VERSION = 1
-const RAFT_JULIA_CLIENT  = 1
+const RAFT_PROTO_VERSION = 1
+const RAFT_JULIA_CLIENT  = 0x1
+const RAFT_PROTO_CLIENT  = 0x2
 
 function process_preamble(h::UInt64)
     size    = UInt32(h & 0xffffffff)
@@ -12,13 +14,23 @@ function process_preamble(h::UInt64)
     (size, version, flags)
 end
 
+function check_version(version, flags, lookup_table)
+    if (flags & RAFT_JULIA_CLIENT) == RAFT_JULIA_CLIENT
+        (version != RAFT_API_VERSION) && throw(RavanaException("Unsupported API version $(version)"))
+    elseif (flags & RAFT_PROTO_CLIENT) == RAFT_PROTO_CLIENT
+        (version != RAFT_PROTO_VERSION) && throw(RavanaException("Unsupported proto version $(version)"))
+    else
+        throw(RavanaException("Bad protocol header. Unknown flag $(flags)"))
+    end
+end
+
+# Disassemble protocol header
 function get_opt(sock, lookup_table)
     (size::UInt32, version::UInt16, flags::UInt16) = process_preamble(read(sock, UInt64))
-    if version != RAFT_API_VERSION
-        throw(RavanaException("Unsupported version $(version)"))
-    end
+    check_version(version, flags, lookup_table)
 
     (op, argv) = array_to_type(read(sock, size))
+    !haskey(lookup_table, op) && throw(RavanaException("Invalid op $(op)"))
     func = lookup_table[op]
     println("op: ", op, "   argv: ", argv)
     return (op, func, argv)
@@ -49,19 +61,21 @@ function ravana_server(;address=IPv4(0), port=2000)
                 throw(RaftException("Error! Socket not open"))
             end
             # Disassemble op and arguments
-            try
-                (op, func, argv) = get_opt(sock, op_table)
-                if op == OP_UNKNOWN continue end
-                # Execute on cluster
-                ret = raft_cluster_execute(op, func, argv)
-                # Return result to client
-                b = byte_array(ret)
-                write(sock, length(b), b)
-            catch e
-                b = byte_array(e)
-                write(sock, length(b), b)
+            @async begin
+                try
+                    (op, func, argv) = get_opt(sock, op_table)
+                    # Execute on cluster
+                    ret = raft_cluster_execute(op, func, argv)
+                    # Return result to client
+                    b = byte_array(ret)
+                    write(sock, length(b), b)
+                catch e
+                    println("ravana_server(): Exception! ", e)
+                    b = byte_array(e)
+                    write(sock, length(b), b)
+                end
+                close(sock)
             end
-            close(sock)
         end
     end
 end
@@ -90,9 +104,11 @@ end
 
 # If leader execute op, otherise redirect to leader
 function raft_cluster_execute(op, func, argv)
+    println("In raft_cluster_execute")
     if op == OP_INIT_CLUSTER
         ret = raft_execute(op, func, argv) # Bootstrap bypasses append entries
     elseif  current_state == LEADER
+        println("Leader before executing raft_run_command")
         ret = raft_run_command(op, func, argv) # Commits as per RAFT protocol
     else
         ret = ravana_client(leaderAddress, leaderPort, op, argv) # Redirect to leader
@@ -101,5 +117,9 @@ function raft_cluster_execute(op, func, argv)
 end
 
 function init_cluster(;address=IPv4(0), port=2000)
-    ravana_client(address, port, Ravana.OP_INIT_CLUSTER)
+    ravana_client(address, port, OP_INIT_CLUSTER, nothing)
+end
+
+function get_cluster_config(node::raftNode)
+    ravana_client(node.name, node.port, OP_GET_CLUSTER_CONF, nothing)
 end

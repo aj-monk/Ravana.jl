@@ -8,6 +8,18 @@ end
 is_majority(votes) = return (votes < (length(nodes) + 1)/2 ? false : true)
 
 """
+    get_node_info(id)
+
+Given a node id return node info.
+"""
+function get_node_info(id)
+    for i = 1:length(nodes)
+        (nodes[i].nodeId == id) && return nodes[i]
+    end
+    return nothing
+end
+
+"""
     byte_array(x)
 
 Serialize Julia type *x* such that it can be written to

@@ -1,7 +1,6 @@
 # Intra cluster communication
 using Sockets
 
-const RAFT_PROTO_VERSION = 1
 
 """
     raft_server()
@@ -29,20 +28,18 @@ function raft_server(;address=IPv4(0), port=1346)
             if isopen(sock) != true
                 throw(RavanaException("Error! Socket not open"))
             end
-            # Disassemble op and arguments
-            (op, func, argv) = get_opt(sock, raft_proto_table)
-            if op == OP_UNKNOWN continue end
-            # Execute RAFT protocol command on this node
-            #try
+            try
+                # Disassemble op and arguments
+                (op, func, argv) = get_opt(sock, raft_proto_table)
+                # Execute RAFT protocol command on this node
                 ret = func(argv)
                 b = byte_array(ret)
                 write(sock, length(b), b)
-            #= catch e
+            catch e
                 println("Protocol Server Error: ", e)
                 b = byte_array(e)
                 write(sock, length(b), b)
             end
-            =#
             close(sock)
         end
     end
@@ -56,7 +53,7 @@ function raft_client(address, port, proto_op::Int32, argv)
     bytes = byte_array((proto_op, argv))
     size = UInt32(length(bytes))
     version = UInt16(RAFT_PROTO_VERSION)
-    flags = UInt16(0)
+    flags = UInt16(RAFT_PROTO_CLIENT)
     client = connect(address, port)
 
     write(client, size, version, flags, bytes)
@@ -69,10 +66,8 @@ end
 
 
 # Raft protocol ops
-const RAFT_REQUEST_VOTE          = Int32(1)
-const RAFT_APPEND_ENTRIES        = Int32(2)
-
-const OP_UNKNOWN                 = Int32(10000)
+const RAFT_REQUEST_VOTE          = Int32(100001)
+const RAFT_APPEND_ENTRIES        = Int32(100002)
 
 # Lookup table for Raft protocol Ops
 const raft_proto_table = Dict(RAFT_APPEND_ENTRIES      =>  local_append_entries,

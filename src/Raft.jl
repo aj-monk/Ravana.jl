@@ -145,9 +145,10 @@ end
 function init_cluster_state()
     (nId, cluId)  = raft_get_node()
     global clusterId = cluId
+    global nodeId = nId
     for i in nodes
         if i.nodeId == nodeId
-            @assert cId == i.clusterId
+            @assert cluId == i.clusterId
             global ipAddress = i.name
             global ipPort    = i.port
         end
@@ -286,6 +287,8 @@ function replicate_entries(node)
         if !status
             if fTerm > rInfo.currentTerm  # Some other leader superseded
                 rInfo.currentTerm = term
+                leaderAddress = node.name
+                leaderPort = node.port
                 @async raft_set_state(FOLLOWER)
                 break
             end
@@ -366,6 +369,9 @@ function local_append_entries(argv)
 
     # If this node is superseded by another, become a follower
     if currentTerm >= rInfo.currentTerm
+        leader = get_node_info(rInfo.nodeId)
+        leaderAddress = leader.name
+        leaderPort = leader.port
         @async raft_set_state(FOLLOWER)
         return (term, prevIndex, false)
     end
@@ -430,6 +436,9 @@ function local_request_vote(argv)
     votedTerm = newTerm
     # If this node is superseded by another, become a follower
     if newTerm >= rInfo.currentTerm
+        leader = get_node_info(leaderId)
+        leaderAddress = leader.name
+        leaderPort = leader.port
         @async raft_set_state(FOLLOWER)
     end
 
