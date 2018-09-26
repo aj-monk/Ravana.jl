@@ -23,14 +23,14 @@ function raft_init_cluster(args)
     clusterId != nothing && throw(RavanaException("This node is part of cluster " * clusterId))
     thisNode = nothing
     (arg) = args
-    if length(args) == 0
-        global nodeId    = rand(UInt128)
-        global clusterId = rand(UInt128)
-        nodes = raftNode[]
-        thisNode = raftNode(ipAddress, ipPort, nodeId, clusterId)
-        push!(nodes, thisNode)
-        arg = nodes
-    end
+
+    global nodeId    = rand(UInt128)
+    global clusterId = rand(UInt128)
+    global nodes = raftNode[]
+    thisNode = raftNode(ipAddress, ipPort, nodeId, clusterId)
+    push!(nodes, thisNode)
+    arg = nodes
+
     raft_init_node(nodeId, clusterId)
     db_put(log, 1, (1, OP_INIT_CLUSTER, arg))
     db_put(log, "RavanaCluster", arg)

@@ -14,7 +14,7 @@ function raft_server(;address=IPv4(0), port=1346)
             try
                 server = listen(address, port)
                 sockErr = false
-                println("Starting Raft protocol server at $(address):$(port)")
+                @info ("Starting Raft protocol server at $(address):$(port)")
             catch e
                 port += 1  # Try next port
             end
@@ -36,7 +36,7 @@ function raft_server(;address=IPv4(0), port=1346)
                 b = byte_array(ret)
                 write(sock, length(b), b)
             catch e
-                println("Protocol Server Error: ", e)
+                @error ("Protocol Server Error: ", e)
                 b = byte_array(e)
                 write(sock, length(b), b)
             end

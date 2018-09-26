@@ -10,7 +10,7 @@ function process_preamble(h::UInt64)
     size    = UInt32(h & 0xffffffff)
     version = UInt16((h >> 32) & 0xffff)
     flags   = UInt16((h >> 48) & 0xffff)
-    println("size=$size version=$version flags=$flags", " ", h)
+    @debug ("size=$size version=$version flags=$flags", " ", h)
     (size, version, flags)
 end
 
@@ -32,7 +32,7 @@ function get_opt(sock, lookup_table)
     (op, argv) = array_to_type(read(sock, size))
     !haskey(lookup_table, op) && throw(RavanaException("Invalid op $(op)"))
     func = lookup_table[op]
-    println("op: ", op, "   argv: ", argv)
+    @debug ("op: ", op, "   argv: ", argv)
     return (op, func, argv)
 end
 
@@ -43,14 +43,14 @@ function ravana_server(;address=IPv4(0), port=2000)
     @async begin
         server = 0 # Init server socket
         sockErr = true
-        println("In ravana_server")
+        @debug ("In ravana_server")
         while (sockErr)
             try
                 server = listen(address, port)
                 sockErr = false
-                println("Starting cluster communication server at $(address):$(port)")
+                @info ("Starting cluster communication server at $(address):$(port)")
             catch e
-                println("Could not listen on port $(port). Trying $(port + 1)")
+                @info ("Could not listen on port $(port). Trying $(port + 1)")
                 port += 1  # Try next port
             end
         end
@@ -70,7 +70,7 @@ function ravana_server(;address=IPv4(0), port=2000)
                     b = byte_array(ret)
                     write(sock, length(b), b)
                 catch e
-                    println("ravana_server(): Exception! ", e)
+                    @error ("ravana_server(): Exception! ", e)
                     b = byte_array(e)
                     write(sock, length(b), b)
                 end
@@ -104,11 +104,11 @@ end
 
 # If leader execute op, otherise redirect to leader
 function raft_cluster_execute(op, func, argv)
-    println("In raft_cluster_execute")
+    @debug ("In raft_cluster_execute")
     if op == OP_INIT_CLUSTER
         ret = raft_execute(op, func, argv) # Bootstrap bypasses append entries
     elseif  current_state == LEADER
-        println("Leader before executing raft_run_command")
+        @debug("Leader before executing raft_run_command")
         ret = raft_run_command(op, func, argv) # Commits as per RAFT protocol
     else
         ret = ravana_client(leaderAddress, leaderPort, op, argv) # Redirect to leader

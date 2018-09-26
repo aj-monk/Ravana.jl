@@ -61,15 +61,16 @@ function raft_uninitialized()
 end
 
 function raft_follower()
-    println("Moved to FOLLOWER state")
+    @info ("Moved to FOLLOWER state")
     start_election_timer()
 end
 
 function raft_candidate()
-    println("Moved to CANDIDATE state")
+    @info ("Moved to CANDIDATE state")
     votes = 0
     for n in nodes
         @async begin  # Parallel requests for votes
+            @debug "Calling request vote"
             (remoteTerm, status) = remote_request_vote(n)
             status && (votes += 1)
         end
@@ -83,7 +84,7 @@ function raft_candidate()
 end
 
 function raft_leader()
-    println("Moved to LEADER state")
+    @info "Moved to LEADER state"
     leaderAddress = ipAddress
     leaderPort = ipPort
     start_heartbeat()
@@ -134,10 +135,6 @@ function read_state()
     init_cluster_state()
 end
 
-function init_raft_log()
-    global log = RocksDB.open_db(basedir() * "raft_log", true)
-end
-
 function get_cluster_nodes()
     db_get(log, "RavanaCluster")
 end
@@ -155,7 +152,7 @@ function init_cluster_state()
     end
 
     raft_set_state(FOLLOWER)
-    println("Node is part of cluster: ", clusterId)
+    @info ("Node is part of cluster: ", clusterId)
 end
 
 function init_raft_info()
@@ -219,7 +216,7 @@ function start_election_timer()
         sleep_random()
         (raft_get_state() != FOLLOWER) && continue
         if !get_heartbeat()
-            println("No heartbeat received")
+            @debug ("No heartbeat received")
             raft_increment_term()
             raft_set_state(CANDIDATE)
         end
@@ -348,7 +345,7 @@ node       : Raft node to which this is sent
 Called by leader to send log entries to followers.
 """
 function remote_append_entries(term, op, argv, prevIndex, prevTerm, commitIndex, node)
-    println("append_entries() term=", term, " op=", op, " prevIndex=", prevIndex, " term=", prevTerm, "node=", node)
+    @info ("append_entries() term=", term, " op=", op, " prevIndex=", prevIndex, " term=", prevTerm, "node=", node)
     payload = (term, rInfo.nodeId, prevIndex, prevTerm, commitIndex, op, argv)
     r = raft_client(node.name, node.port, RAFT_APPEND_ENTRIES, payload)
 end
@@ -448,6 +445,10 @@ end
 #=
    ## Raft log utils ##
 =#
+function init_raft_log()
+    global log = RocksDB.open_db(basedir() * "raft_log", true)
+end
+
 function get_log_entry(index)
     r = db_get(log, index)
     r
