@@ -48,7 +48,8 @@ function raft_cluster_add_node(thisNode, clusterNode)
     
 end
 
-function raft_cluster_get_config()
+function raft_cluster_get_config(args)
+    @debug "in raft_cluster_get_config()"
     return nodes
 end
 

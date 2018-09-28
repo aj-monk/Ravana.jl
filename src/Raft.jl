@@ -56,6 +56,11 @@ const HEARTBEAT_TIMEOUT = 0.01
 #   2. > worst one way communication time to another node
 const ELECTION_TIMEOUT  = 0.1
 
+raft_increment_term() = (rInfo.currentTerm = rInfo.currentTerm + 1)
+set_current_term(t) = (rInfo.currentTerm = t)
+set_last_index(i) = (rInfo.lastIndex = i)
+set_commit_index(index) = (rInfo.commitIndex = index)
+
 function raft_uninitialized()
     return
 end
@@ -85,8 +90,9 @@ end
 
 function raft_leader()
     @info "Moved to LEADER state"
-    leaderAddress = ipAddress
-    leaderPort = ipPort
+    global leaderAddress = ipAddress
+    global leaderPort = ipPort
+    @info "leader: $(ipAddress):$(leaderPort)"
     start_heartbeat()
 end
 
@@ -203,8 +209,6 @@ function execute_entry(index)
     raft_execute(op, op_table(op), argv)
 end
 
-raft_increment_term() = (rInfo.currentTerm = rInfo.currentTerm + 1)
-
 # get_heartbeat(), set_heartbeat() and start_election_timer() called
 # in the context of follower
 receivedHeartbeat = false
@@ -306,18 +310,35 @@ time commitIndex will be incremented - see the safety argument in
 the paper.
 """
 function raft_run_command(op, func, args)
-    (get_raft_state() != LEADER) && (return nothing)
+    (raft_get_state() != LEADER) && (return nothing)
     r = get_log_entry(rInfo.lastIndex)
     @assert(r != nothing)
     (prevTerm, op, argv) = r
-    # Append local log
     payload = (rInfo.currentTerm, nodeId, rInfo.lastIndex, prevTerm, rInfo.commitIndex, op, argv)
+    setup_condition(rInfo.lastIndex + 1) # Setup condition variable on index
+    @debug "Append local log"
     local_append_entries(payload)
-    # Wake up tasks to append to other nodes' logs
+    @debug "Wake up tasks to append to other nodes' logs"
     notify(repCond, all=true)
     wait_on_majority(rInfo.lastIndex + 1)
+    @debug "Replicated to majority! Execute command on this node"
+    set_commit_index(rInfo.lastIndex + 1)
     ret = raft_execute(op, func, args)
     ret
+end
+
+"""
+    setup_condition(index)
+
+Setup condition variable for the index in the log. The condition
+is released when a majority of nodes have replicated the entry at *index*.
+Clients can wait on these to return a success to the caller of a command.
+"""
+function setup_condition(index)
+    @assert(haskey(clients, index) == false)
+    (length(nodes) == 1) && return
+    clients[index] = Condition()
+    return
 end
 
 """
@@ -327,10 +348,29 @@ Waits for the log entry at index on this node to be replicated to a majority
 of nodes in the cluster.
 """
 function wait_on_majority(index)
-    @assert(haskey(clients, index) == false)
-    clients[index] = cond = Condition()
-    wait(cond)
+    !haskey(clients, index) && return
+    cond = clients[index]
+    while !majority_replicated(index)
+        wait(cond)
+    end
     delete!(clients, index)
+    return
+end
+
+"""
+    majority_replicated(index)
+
+Returns true if the log entry at *index* has been replicated to
+a majority of nodes.
+"""
+function majority_replicated(index)
+    votes = 1
+    for n in nodes
+        fState = followers[node.nodeId]
+        (fState.nextIndex > index) && (votes += 1)
+    end
+    is_majority(votes) && return true
+    false
 end
 
 """
@@ -358,7 +398,8 @@ function local_append_entries(argv)
     (currentTerm, leaderNodeId, prevIndex, prevTerm, commitIndex, op, args) = argv
 
     # Add entry without question if this node is leader
-    if leaderNodeId == rInfo.nodeId
+    if leaderNodeId == nodeId
+        @debug "Adding entry to leader/local log"
         (op != OP_NOOP) && add_log_entry(prevIndex + 1, currentTerm, op, args)
         rInfo.lastIndex = prevIndex + 1
         return (rInfo.currentTerm, prevIndex, true)
@@ -367,6 +408,7 @@ function local_append_entries(argv)
     # If this node is superseded by another, become a follower
     if currentTerm >= rInfo.currentTerm
         leader = get_node_info(rInfo.nodeId)
+        @debug "Found a another leader $(leader.name) superseding $(leaderAddress)"
         leaderAddress = leader.name
         leaderPort = leader.port
         @async raft_set_state(FOLLOWER)
@@ -388,9 +430,9 @@ function local_append_entries(argv)
 
     # Success case
     (op != OP_NOOP) && add_log_entry(prevIndex + 1, currentTerm, op, args)
-    rInfo.commitIndex = min(commitIndex, prevIndex+1)
-    rInfo.currentTerm = currentTerm
-    rInfo.lastIndex = prevIndex + 1
+    set_commit_index(min(commitIndex, prevIndex+1))
+    set_current_term(currentTerm)
+    set_last_index(prevIndex + 1)
     global received_heartbeat = true
     return (rInfo.currentTerm, prevIndex, true)
 end

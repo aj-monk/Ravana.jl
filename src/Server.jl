@@ -6,6 +6,8 @@ const RAFT_PROTO_VERSION = 1
 const RAFT_JULIA_CLIENT  = 0x1
 const RAFT_PROTO_CLIENT  = 0x2
 
+const COMMS_PORT = 2000
+
 function process_preamble(h::UInt64)
     size    = UInt32(h & 0xffffffff)
     version = UInt16((h >> 32) & 0xffff)
@@ -39,7 +41,7 @@ end
 """
 
 """
-function ravana_server(;address=IPv4(0), port=2000)
+function ravana_server(;address=IPv4(0), port=COMMS_PORT)
     @async begin
         server = 0 # Init server socket
         sockErr = true
@@ -102,7 +104,7 @@ function ravana_client(address, port, op::Int32, argv...)
     ret
 end
 
-# If leader execute op, otherise redirect to leader
+# If leader execute op, otherwise redirect to leader
 function raft_cluster_execute(op, func, argv)
     @debug ("In raft_cluster_execute")
     if op == OP_INIT_CLUSTER
@@ -123,3 +125,5 @@ end
 function get_cluster_config(node::raftNode)
     ravana_client(node.name, node.port, OP_GET_CLUSTER_CONF, nothing)
 end
+
+get_cluster_config() = get_cluster_config(raftNode(leaderAddress, COMMS_PORT, Int128(0), Int128(0)))

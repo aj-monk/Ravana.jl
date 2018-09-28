@@ -23,6 +23,8 @@ function raft_server(;address=IPv4(0), port=1346)
         global ipAddress = address
         global ipPort   = port
 
+        # NOTE: Starting each iteration in a new task will cause
+        #       incorrect behavior
         while true
             sock = accept(server)
             if isopen(sock) != true
